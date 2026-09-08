@@ -52,6 +52,8 @@ Identifies resource-management and runtime issues such as:
 - Jump directly to the affected source code with a single click.
 
 ---
+***Aritecture***
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/99102efb-d44c-4d8c-b7ae-7357af109045" />
 
 # 📦 Prerequisites
 
