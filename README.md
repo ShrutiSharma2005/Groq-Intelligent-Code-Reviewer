@@ -16,7 +16,7 @@ An AI-powered Visual Studio Code extension that performs **workspace-wide static
 
 ### ⚡ AI-Powered Code Review
 
-- Uses **Groq's `llama-3.3-70b-versatile`** model exclusively.
+- Uses **Groq's API** model exclusively.
 - No model switching or fallbacks.
 - Generates intelligent explanations with practical fix recommendations.
 
