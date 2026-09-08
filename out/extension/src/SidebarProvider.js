@@ -1,0 +1,255 @@
+"use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.GroqSidebarProvider = void 0;
+const vscode = __importStar(require("vscode"));
+function getNonce() {
+    let text = '';
+    const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    for (let i = 0; i < 32; i++) {
+        text += possible.charAt(Math.floor(Math.random() * possible.length));
+    }
+    return text;
+}
+class GroqSidebarProvider {
+    _extensionUri;
+    _view;
+    constructor(_extensionUri) {
+        this._extensionUri = _extensionUri;
+    }
+    resolveWebviewView(webviewView) {
+        this._view = webviewView;
+        webviewView.webview.options = {
+            enableScripts: true,
+            localResourceRoots: [this._extensionUri],
+        };
+        webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+        webviewView.webview.onDidReceiveMessage(async (data) => {
+            switch (data.type) {
+                case 'jumpToCode': {
+                    if (!data.file || !data.line)
+                        return;
+                    const uris = await vscode.workspace.findFiles(`**/${data.file}`);
+                    if (uris.length > 0) {
+                        const document = await vscode.workspace.openTextDocument(uris[0]);
+                        const editor = await vscode.window.showTextDocument(document);
+                        const position = new vscode.Position(Number(data.line) - 1, 0);
+                        editor.selection = new vscode.Selection(position, position);
+                        editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+                        const decorationType = vscode.window.createTextEditorDecorationType({
+                            backgroundColor: 'rgba(255, 0, 0, 0.3)',
+                            isWholeLine: true,
+                        });
+                        editor.setDecorations(decorationType, [
+                            new vscode.Range(position, position),
+                        ]);
+                        setTimeout(() => {
+                            editor.setDecorations(decorationType, []);
+                        }, 3000);
+                    }
+                    else {
+                        vscode.window.showErrorMessage(`File ${data.file} not found in workspace.`);
+                    }
+                    break;
+                }
+                case 'analyzeWorkspace': {
+                    await vscode.commands.executeCommand('groq-reviewer.analyzeCode');
+                    break;
+                }
+            }
+        });
+    }
+    // 🔥 FIX: Safe message sending
+    postMessage(message) {
+        if (this._view) {
+            this._view.webview.postMessage(message);
+        }
+        else {
+            console.warn('Sidebar view not initialized yet.');
+        }
+    }
+    _getHtmlForWebview(webview) {
+        const cspSource = webview.cspSource;
+        const nonce = getNonce();
+        return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+body { font-family: var(--vscode-font-family); padding: 10px; }
+h2 { border-bottom: 1px solid #444; padding-bottom: 5px; }
+
+.bug-card {
+  background: #1e1e1e;
+  border-left: 4px solid #888;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+
+.bug-card.sev-critical { border-left-color: #f14c4c; }
+.bug-card.sev-high { border-left-color: #ff8c00; }
+.bug-card.sev-medium { border-left-color: #e5c07b; }
+.bug-card.sev-low { border-left-color: #6a9955; }
+
+.bug-title { font-weight: 600; }
+
+.bug-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #333;
+  margin-left: 6px;
+}
+
+.bug-section-label {
+  font-weight: 600;
+  margin-top: 6px;
+  font-size: 0.85em;
+  color: #ccc;
+}
+
+.bug-meta {
+  cursor: pointer;
+  color: #4fc3f7;
+}
+
+button {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+}
+
+.loader {
+  display: none;
+}
+</style>
+</head>
+
+<body>
+<h2>System-Level Bug Review</h2>
+
+<button id="analyzeBtn">Analyze Workspace</button>
+<div id="loader">⏳ Analyzing...</div>
+
+<div id="results">
+<p>Click Analyze to start.</p>
+</div>
+
+<script nonce="${nonce}">
+const vscode = acquireVsCodeApi();
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value === undefined || value === null ? '' : String(value);
+  return div.innerHTML;
+}
+
+document.getElementById('analyzeBtn').addEventListener('click', () => {
+  document.getElementById('loader').style.display = 'block';
+  document.getElementById('results').innerHTML = '<p>Analyzing...</p>';
+
+  vscode.postMessage({ type: 'analyzeWorkspace' });
+});
+
+window.addEventListener('message', event => {
+  const message = event.data;
+
+  console.log("Received:", message); // 🔥 debug
+
+  if (message.type === 'analysis_result') {
+    document.getElementById('loader').style.display = 'none';
+
+    const resultsDiv = document.getElementById('results');
+    resultsDiv.innerHTML = '';
+
+    const issues = message.issues || [];
+
+    if (issues.length === 0) {
+      resultsDiv.innerHTML = '<p>✅ No bugs found</p>';
+      return;
+    }
+
+    issues.forEach(issue => {
+      const card = document.createElement('div');
+      const sev = (issue.severity || '').toLowerCase();
+      card.className = 'bug-card' + (sev ? ' sev-' + sev : '');
+
+      card.innerHTML = \`
+        <div class="bug-title">\${escapeHtml(issue.title || issue.type || 'Issue')}
+          <span class="bug-badge">\${escapeHtml(issue.severity || '')}</span>
+          <span class="bug-badge">\${escapeHtml(issue.type || '')}</span>
+        </div>
+        <div class="bug-meta" data-file="\${escapeHtml(issue.file)}" data-line="\${escapeHtml(issue.line)}">
+          📄 \${escapeHtml(issue.file)} : Line \${escapeHtml(issue.line)}
+        </div>
+        <div class="bug-section-label">Explanation</div>
+        <div>\${escapeHtml(issue.explanation)}</div>
+        <div class="bug-section-label">Impact</div>
+        <div>\${escapeHtml(issue.impact)}</div>
+        <div class="bug-section-label">Fix</div>
+        <div>\${escapeHtml(issue.fix)}</div>
+        <pre>\${escapeHtml(issue.code_fix)}</pre>
+        <div class="bug-badge">Confidence: \${escapeHtml(issue.confidence || 'N/A')}</div>
+      \`;
+
+      resultsDiv.appendChild(card);
+    });
+  }
+});
+
+// Event delegation instead of inline onclick="" (inline event-handler
+// attributes are blocked by CSP even when a script nonce is present).
+document.getElementById('results').addEventListener('click', (e) => {
+  const target = e.target.closest('.bug-meta');
+  if (!target) return;
+  vscode.postMessage({
+    type: 'jumpToCode',
+    file: target.dataset.file,
+    line: target.dataset.line,
+  });
+});
+</script>
+</body>
+</html>
+`;
+    }
+}
+exports.GroqSidebarProvider = GroqSidebarProvider;
+//# sourceMappingURL=SidebarProvider.js.map
