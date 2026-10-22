@@ -8,6 +8,15 @@ import { SYSTEM_LEVEL_BUGS_PROMPT } from '../../backend/promptTemplates';
 async function runAnalysis(sidebarProvider: GroqSidebarProvider) {
   vscode.window.showInformationMessage('Starting Groq Code Review Analysis...');
 
+  // Reveal the contributed Activity Bar container (id from package.json
+  // "viewsContainers.activitybar") so the webview view gets resolved.
+  // Results are queued by the provider if it isn't ready yet.
+  try {
+    await vscode.commands.executeCommand('workbench.view.extension.groqReviewerFinal');
+  } catch (e) {
+    console.warn('Could not reveal Groq Reviewer container:', e);
+  }
+
   try {
     // 🔹 Step 1: Get workspace files
     const fileContexts = await analyzeWorkspaceFiles();

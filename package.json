@@ -2,7 +2,7 @@
   "name": "groq-intelligent-code-reviewer",
   "displayName": "Groq Intelligent Code Reviewer",
   "description": "An AI-powered VS Code extension that detects system-level bugs using the Groq API (openai/gpt-oss-120b).",
-  "version": "0.0.1",
+  publisher": "ShrutiSharma","version": "0.0.1",
   "engines": {
     "vscode": "^1.80.0"
   },

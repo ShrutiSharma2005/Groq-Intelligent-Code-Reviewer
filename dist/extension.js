@@ -26,6 +26,15 @@ __webpack_require__.r(__webpack_exports__);
 
 async function runAnalysis(sidebarProvider) {
     vscode__WEBPACK_IMPORTED_MODULE_0__.window.showInformationMessage('Starting Groq Code Review Analysis...');
+    // Reveal the contributed Activity Bar container (id from package.json
+    // "viewsContainers.activitybar") so the webview view gets resolved.
+    // Results are queued by the provider if it isn't ready yet.
+    try {
+        await vscode__WEBPACK_IMPORTED_MODULE_0__.commands.executeCommand('workbench.view.extension.groqReviewerFinal');
+    }
+    catch (e) {
+        console.warn('Could not reveal Groq Reviewer container:', e);
+    }
     try {
         // 🔹 Step 1: Get workspace files
         const fileContexts = await (0,_analyzer__WEBPACK_IMPORTED_MODULE_1__.analyzeWorkspaceFiles)();
@@ -3283,11 +3292,21 @@ function getNonce() {
 class GroqSidebarProvider {
     _extensionUri;
     _view;
+    _ready = false;
+    _pending = [];
     constructor(_extensionUri) {
         this._extensionUri = _extensionUri;
     }
     resolveWebviewView(webviewView) {
         this._view = webviewView;
+        // A fresh webview document must send 'ready' again before we post to it.
+        this._ready = false;
+        webviewView.onDidDispose(() => {
+            if (this._view === webviewView) {
+                this._view = undefined;
+                this._ready = false;
+            }
+        });
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [this._extensionUri],
@@ -3295,6 +3314,15 @@ class GroqSidebarProvider {
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
         webviewView.webview.onDidReceiveMessage(async (data) => {
             switch (data.type) {
+                case 'ready': {
+                    this._ready = true;
+                    const queued = this._pending;
+                    this._pending = [];
+                    for (const msg of queued) {
+                        void webviewView.webview.postMessage(msg);
+                    }
+                    break;
+                }
                 case 'jumpToCode': {
                     if (!data.file || !data.line)
                         return;
@@ -3330,11 +3358,12 @@ class GroqSidebarProvider {
     }
     // 🔥 FIX: Safe message sending
     postMessage(message) {
-        if (this._view) {
-            this._view.webview.postMessage(message);
+        if (this._view && this._ready) {
+            void this._view.webview.postMessage(message);
         }
         else {
-            console.warn('Sidebar view not initialized yet.');
+            // Webview not created/ready yet: queue and deliver on 'ready'.
+            this._pending.push(message);
         }
     }
     _getHtmlForWebview(webview) {
@@ -3488,6 +3517,9 @@ window.addEventListener('message', event => {
     });
   }
 });
+
+// Tell the extension the listener above is attached so queued results flush.
+vscode.postMessage({ type: 'ready' });
 
 // Event delegation instead of inline onclick="" (inline event-handler
 // attributes are blocked by CSP even when a script nonce is present).

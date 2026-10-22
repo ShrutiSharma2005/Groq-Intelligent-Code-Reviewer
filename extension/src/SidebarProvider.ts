@@ -13,11 +13,22 @@ function getNonce(): string {
 
 export class GroqSidebarProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
+  private _ready = false;
+  private _pending: any[] = [];
 
   constructor(private readonly _extensionUri: vscode.Uri) {}
 
   public resolveWebviewView(webviewView: vscode.WebviewView) {
     this._view = webviewView;
+    // A fresh webview document must send 'ready' again before we post to it.
+    this._ready = false;
+
+    webviewView.onDidDispose(() => {
+      if (this._view === webviewView) {
+        this._view = undefined;
+        this._ready = false;
+      }
+    });
 
     webviewView.webview.options = {
       enableScripts: true,
@@ -28,6 +39,16 @@ export class GroqSidebarProvider implements vscode.WebviewViewProvider {
 
     webviewView.webview.onDidReceiveMessage(async (data) => {
       switch (data.type) {
+        case 'ready': {
+          this._ready = true;
+          const queued = this._pending;
+          this._pending = [];
+          for (const msg of queued) {
+            void webviewView.webview.postMessage(msg);
+          }
+          break;
+        }
+
         case 'jumpToCode': {
           if (!data.file || !data.line) return;
 
@@ -76,10 +97,11 @@ export class GroqSidebarProvider implements vscode.WebviewViewProvider {
 
   // 🔥 FIX: Safe message sending
   public postMessage(message: any) {
-    if (this._view) {
-      this._view.webview.postMessage(message);
+    if (this._view && this._ready) {
+      void this._view.webview.postMessage(message);
     } else {
-      console.warn('Sidebar view not initialized yet.');
+      // Webview not created/ready yet: queue and deliver on 'ready'.
+      this._pending.push(message);
     }
   }
 
@@ -235,6 +257,9 @@ window.addEventListener('message', event => {
     });
   }
 });
+
+// Tell the extension the listener above is attached so queued results flush.
+vscode.postMessage({ type: 'ready' });
 
 // Event delegation instead of inline onclick="" (inline event-handler
 // attributes are blocked by CSP even when a script nonce is present).
